@@ -38,6 +38,17 @@ start 选项:
 
 面试中: 直接输入回答；/end 提前结束；/quit 退出（进度已实时落盘）`;
 
+/** 拒绝二进制文件（docx/pdf 等）：乱码进系统提示词等于每轮请求白烧上万 token */
+function readTextFile(path: string, flag: string): string {
+  const buf = readFileSync(path);
+  const isZip = buf[0] === 0x50 && buf[1] === 0x4b; // docx/xlsx 都是 zip
+  const isPdf = buf.subarray(0, 4).toString("latin1") === "%PDF";
+  if (isZip || isPdf || buf.subarray(0, 1024).includes(0)) {
+    throw new Error(`${flag} ${path} 是二进制文件（docx/pdf？），请先转成 .md 或 .txt 纯文本`);
+  }
+  return buf.toString("utf8");
+}
+
 function parseFlags(argv: string[]): Map<string, string> {
   const flags = new Map<string, string>();
   for (let i = 0; i < argv.length; i++) {
@@ -56,7 +67,6 @@ async function interviewLoop(store: SessionStore, setup: InterviewSetup, message
   console.log(dim(`岗位: ${setup.role}（${setup.level}）  |  ${setup.questionCount} 道主问题  |  /end 提前结束  /quit 退出\n`));
 
   const context: Context = { systemPrompt: buildSystemPrompt(setup), messages, tools: interviewTools };
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
   let totalCost = 0;
 
   const hooks = {
@@ -65,34 +75,44 @@ async function interviewLoop(store: SessionStore, setup: InterviewSetup, message
     onEvaluation: (e: { questionNumber: number }) => process.stdout.write(dim(`\n  📋 第 ${e.questionNumber} 题评估已记录`)),
   };
 
-  try {
-    while (true) {
-      const result = await runTurn(model, context, store, headId, hooks, apiKey);
-      headId = result.headId;
-      totalCost += result.costSoFar;
+  while (true) {
+    const result = await runTurn(model, context, store, headId, hooks, apiKey);
+    headId = result.headId;
+    totalCost += result.costSoFar;
 
-      if (result.verdict) {
-        const { path } = generateReport(store.sessionId, store.branch(headId));
-        console.log(`\n\n${bold("✅ 面试结束")}  ${dim(`总成本 $${totalCost.toFixed(4)}`)}`);
-        console.log(`复盘报告: ${path}`);
-        return;
-      }
-
-      let answer = "";
-      while (!answer.trim()) {
-        answer = await rl.question(`\n\n${bold("你")}  `);
-      }
-      if (answer.trim() === "/quit") {
-        console.log(dim(`\n进度已保存。继续重答可用 viva fork，查看报告用 viva report ${store.sessionId}`));
-        return;
-      }
-      const text = answer.trim() === "/end" ? REQUEST_END_MESSAGE : answer;
-      const userMessage: Message = { role: "user", content: text, timestamp: Date.now() };
-      context.messages.push(userMessage);
-      const id = newEntryId();
-      store.append({ id, parentId: headId, type: "message", message: userMessage });
-      headId = id;
+    if (result.verdict) {
+      const { path } = generateReport(store.sessionId, store.branch(headId));
+      console.log(`\n\n${bold("✅ 面试结束")}  ${dim(`总成本 $${totalCost.toFixed(4)}`)}`);
+      console.log(`复盘报告: ${path}`);
+      return;
     }
+
+    let answer = "";
+    while (!answer.trim()) {
+      answer = await ask(`\n\n${bold("你")}  `);
+    }
+    if (answer.trim() === "/quit") {
+      console.log(dim(`\n进度已保存。继续重答可用 viva fork，查看报告用 viva report ${store.sessionId}`));
+      return;
+    }
+    const text = answer.trim() === "/end" ? REQUEST_END_MESSAGE : answer;
+    const userMessage: Message = { role: "user", content: text, timestamp: Date.now() };
+    context.messages.push(userMessage);
+    const id = newEntryId();
+    store.append({ id, parentId: headId, type: "message", message: userMessage });
+    headId = id;
+  }
+}
+
+/**
+ * 每次提问临时创建 readline、答完即关。
+ * 常驻的 readline 会按过期的光标位置刷新行并向下清屏，
+ * 把流式输出的尾巴擦掉（屏幕上文字"莫名消失"的元凶）。
+ */
+async function ask(promptText: string): Promise<string> {
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    return await rl.question(promptText);
   } finally {
     rl.close();
   }
@@ -105,8 +125,8 @@ async function cmdStart(argv: string[]): Promise<void> {
     level: (flags.get("level") as InterviewSetup["level"]) ?? "senior",
     language: (flags.get("lang") as InterviewSetup["language"]) ?? "zh",
     questionCount: Number(flags.get("n") ?? 5),
-    jd: flags.has("jd") ? readFileSync(flags.get("jd")!, "utf8") : undefined,
-    resume: flags.has("resume") ? readFileSync(flags.get("resume")!, "utf8") : undefined,
+    jd: flags.has("jd") ? readTextFile(flags.get("jd")!, "--jd") : undefined,
+    resume: flags.has("resume") ? readTextFile(flags.get("resume")!, "--resume") : undefined,
     focus: flags.get("focus"),
   };
 
