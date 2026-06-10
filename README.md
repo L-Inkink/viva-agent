@@ -29,6 +29,7 @@ $ viva start --role "Agent 开发工程师" --jd examples/jd-agent-engineer.md -
 
 ```
 $ viva fork 3            # 从第 3 题被提出的瞬间分叉，重新作答
+$ viva compare 3         # 并排对比第 3 题的原回答与重答：得分变化、各自的亮点/不足
 $ viva report            # 重新生成当前分支的复盘报告
 $ viva list              # 历史面试一览
 ```
@@ -47,19 +48,32 @@ export VIVA_BASE_URL=http://localhost:11434/v1  # 3) 任意 OpenAI 兼容端点
 node dist/cli.js start --role "你的目标岗位" --level senior --n 5
 ```
 
-离线跑通整条链路（无需任何 key）：`npm test` —— 用脚本化的 mock LLM 服务器走完「出题 → 作答 → 工具评估 → 收尾 → fork 重答 → 报告校验」全流程。
+离线跑通整条链路（无需任何 key）：`npm test` —— 用脚本化的 mock LLM 服务器走完「出题 → 作答 → 工具评估 → 收尾 → fork 重答 → compare 对比 → 报告校验」全流程。
+
+## 面试官本身也要被评测
+
+`npm run eval`（需真实模型）：强/弱两个脚本化候选人各跑 N 场同题面试，回归三件事——
+
+- **区分度**：强候选人均分必须比弱候选人高至少 1 分
+- **稳定性**：同一候选人多次运行的分差 ≤ 1.5 分（`--runs N` 控制重复次数）
+- **健壮性**：每场都必须完整产出结构化评估和总评（工具调用不掉链子）
+
+改提示词、换模型之前先跑一遍，面试官"变笨"了立刻暴露。
 
 ## 架构与设计决策
 
 ```
 src/
-  cli.ts      命令行入口与 REPL（~190 行）
+  cli.ts      命令行入口与 REPL（~230 行）
   loop.ts     agent loop（~80 行，整个项目的心脏）
   tools.ts    面试官的两个工具：record_evaluation / end_interview
   prompts.ts  系统提示词（刻意 <1000 token，pi 的启示）
   store.ts    JSONL 树形 session 存储（append-only，支持 fork）
   report.ts   复盘报告生成（纯数据变换，零 LLM 调用）
+  compare.ts  同一道题跨分支的重答对比
   config.ts   多厂商模型解析（pi-ai 注册表 + 自定义端点）
+test/         mock LLM 服务器、脚本化面试驱动、离线冒烟测试、真实模型探针
+eval/         面试官回归评测（强/弱候选人区分度与打分稳定性）
 ```
 
 四个值得说道的决策：
@@ -74,8 +88,8 @@ src/
 
 ## Roadmap
 
-- [ ] 评测集：固定题库 + 录制的候选人回答，回归测试面试官的追问与打分稳定性（LLM-as-judge）
-- [ ] `viva compare`：fork 前后两次回答的对比报告
+- [x] 评测回归：脚本化强/弱候选人，验证面试官的区分度、稳定性与健壮性（`npm run eval`）
+- [x] `viva compare`：fork 前后两次回答的对比报告
 - [ ] 语音模式（流式 TTS/ASR，更接近真实面试）
 - [ ] Web 报告页与付费题库（盈利方向）
 

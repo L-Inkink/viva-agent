@@ -1,14 +1,15 @@
-// 脚本化的 OpenAI 兼容 mock 服务器，用于离线冒烟测试 agent loop：
-// 第 1 次请求出题 → 第 2 次请求调 record_evaluation → 第 3 次收尾并调 end_interview。
+// 无状态的 OpenAI 兼容 mock 服务器，用于离线冒烟测试 agent loop。
+// 按请求体内容决定响应：还没人答题 → 出题；候选人刚答完 → 调 record_evaluation；
+// 工具结果刚回填 → 收尾并调 end_interview。对任意对话路径（含 fork 分支）都成立。
 // 用法: node test/mock-llm.mjs [port]
 import { createServer } from "node:http";
 
 const port = Number(process.argv[2] ?? 8787);
 let calls = 0;
 
-const SCRIPT = [
-  { text: "你好，我是今天的面试官。我们直接开始：请讲讲一个最小可用的 agent loop 由哪几部分组成？" },
-  {
+const STEPS = {
+  question: { text: "你好，我是今天的面试官。我们直接开始：请讲讲一个最小可用的 agent loop 由哪几部分组成？" },
+  evaluate: {
     toolCalls: [
       {
         name: "record_evaluation",
@@ -25,7 +26,7 @@ const SCRIPT = [
       },
     ],
   },
-  {
+  end: {
     text: "好的，今天的面试就到这里，感谢你的时间！",
     toolCalls: [
       {
@@ -39,7 +40,15 @@ const SCRIPT = [
       },
     ],
   },
-];
+};
+
+function pickStep(body) {
+  const messages = JSON.parse(body).messages ?? [];
+  const last = messages.at(-1);
+  if (last?.role === "tool") return STEPS.end;
+  const userAnswers = messages.filter((m) => m.role === "user").length;
+  return userAnswers <= 1 ? STEPS.question : STEPS.evaluate; // 第 1 条 user 是开场引导
+}
 
 function sse(res, obj) {
   res.write(`data: ${JSON.stringify(obj)}\n\n`);
@@ -49,7 +58,7 @@ createServer((req, res) => {
   let body = "";
   req.on("data", (c) => (body += c));
   req.on("end", () => {
-    const step = SCRIPT[Math.min(calls, SCRIPT.length - 1)];
+    const step = pickStep(body);
     calls++;
     res.writeHead(200, { "content-type": "text/event-stream" });
     const id = `mock-${calls}`;
@@ -83,4 +92,4 @@ createServer((req, res) => {
     res.write("data: [DONE]\n\n");
     res.end();
   });
-}).listen(port, () => console.log(`mock LLM listening on http://localhost:${port}/v1 (calls scripted: ${SCRIPT.length})`));
+}).listen(port, () => console.log(`mock LLM listening on http://localhost:${port}/v1`));

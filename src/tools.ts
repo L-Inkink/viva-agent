@@ -17,7 +17,14 @@ export const recordEvaluation: Tool = {
     dimension: Type.String({
       description: "主要考察维度，取值：基础知识 | 系统设计 | 工程权衡 | 实战经验 | 沟通表达",
     }),
-    score: Type.Number({ minimum: 1, maximum: 5, description: "1=很差 2=较差 3=及格 4=良好 5=优秀" }),
+    score: Type.Number({
+      minimum: 1,
+      maximum: 5,
+      description:
+        "严格对照锚点打分，只看回答内容，不受语气和篇幅影响：" +
+        "1=答不上来或方向错误；2=只有零散概念，缺乏结构；3=方向正确、结构完整，但缺乏深度或实战细节；" +
+        "4=结构清晰且给出具体工程方案与权衡；5=在 4 的基础上还有踩坑经验、量化结果或超出问题本身的洞察。同样质量的回答必须得到同样的分。",
+    }),
     strengths: Type.String({ description: "回答中的亮点" }),
     weaknesses: Type.String({ description: "回答中的不足或遗漏" }),
     idealAnswerPoints: Type.String({ description: "理想答案的关键要点，写进复盘报告供候选人学习" }),

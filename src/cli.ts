@@ -2,6 +2,7 @@
 import { readFileSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import type { Context, Message } from "@earendil-works/pi-ai";
+import { generateCompare } from "./compare.js";
 import { resolveModel } from "./config.js";
 import { runTurn } from "./loop.js";
 import { buildSystemPrompt, KICKOFF_MESSAGE, REQUEST_END_MESSAGE } from "./prompts.js";
@@ -19,6 +20,7 @@ const HELP = `viva — AI 模拟面试官（基于 pi-ai 的薄 agent loop）
 用法:
   viva [start] [选项]          开始一场新面试
   viva fork <题号> [session]   从某道题之前分叉，重答该题（默认最近一场）
+  viva compare <题号> [session] 对比某道题的原回答与 fork 重答（默认最近一场）
   viva report [session]        生成/重新生成复盘报告（默认最近一场）
   viva list                    列出历史面试
 
@@ -178,6 +180,16 @@ async function interviewLoopResumed(store: SessionStore, setup: InterviewSetup, 
   await interviewLoop(store, setup, messagesFromBranch(branch), headId);
 }
 
+function cmdCompare(argv: string[]): void {
+  const n = Number(argv[0]);
+  if (!Number.isInteger(n) || n < 1) throw new Error("用法: viva compare <题号> [sessionId]");
+  const sessionId = argv[1] ?? SessionStore.latestId();
+  if (!sessionId) throw new Error("没有历史 session");
+  const { markdown, path } = generateCompare(sessionId, n);
+  console.log(markdown);
+  console.log(dim(`\n已保存: ${path}`));
+}
+
 function cmdReport(argv: string[]): void {
   const sessionId = argv[0] ?? SessionStore.latestId();
   if (!sessionId) throw new Error("没有历史 session");
@@ -206,6 +218,7 @@ async function main(): Promise<void> {
   const [cmd, ...rest] = process.argv.slice(2);
   try {
     if (cmd === "list") cmdList();
+    else if (cmd === "compare") cmdCompare(rest);
     else if (cmd === "report") cmdReport(rest);
     else if (cmd === "fork") await cmdFork(rest);
     else if (cmd === "help" || cmd === "--help" || cmd === "-h") console.log(HELP);

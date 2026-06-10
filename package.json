@@ -10,7 +10,8 @@
     "build": "tsc",
     "dev": "tsx src/cli.ts",
     "start": "node dist/cli.js",
-    "test": "npm run build && node test/smoke.mjs"
+    "test": "npm run build && node test/smoke.mjs",
+    "eval": "npm run build && node eval/run.mjs"
   },
   "engines": {
     "node": ">=20"

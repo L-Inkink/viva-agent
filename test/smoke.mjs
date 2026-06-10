@@ -60,7 +60,17 @@ try {
   assert(out2.includes("从第 1 题分叉重答"), "fork 找到第 1 题的提问位置");
   assert(out2.includes("面试结束"), "fork 分支正常走完");
 
-  // 3. session 文件是一棵树：两个 verdict 在不同分支上
+  // 3. compare：对比同一道题的两次回答
+  const cmp = await new Promise((resolve) => {
+    const child = spawn(process.execPath, ["dist/cli.js", "compare", "1", sessionId], { env });
+    let out = "";
+    child.stdout.on("data", (c) => (out += c));
+    child.stderr.on("data", (c) => (out += c));
+    child.on("close", () => resolve(out));
+  });
+  assert(cmp.includes("重答对比") && cmp.includes("第 2 次尝试"), "compare 生成两次尝试的对比");
+
+  // 4. session 文件是一棵树：两个 verdict 在不同分支上
   const entries = readFileSync(join(VIVA_HOME, "sessions", `${sessionId}.jsonl`), "utf8")
     .split("\n").filter(Boolean).map((l) => JSON.parse(l));
   const verdicts = entries.filter((e) => e.type === "verdict");
